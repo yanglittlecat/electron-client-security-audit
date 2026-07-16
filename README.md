@@ -7,7 +7,7 @@
 在 Codex 中调用 `$skill-installer` 从本 GitHub 仓库安装：
 
 ```text
-$skill-installer 安装 https://github.com/yanglittlecat/electron-client-security-audit/tree/main/.
+使用 $skill-installer 从 GitHub 仓库 https://github.com/yanglittlecat/electron-client-security-audit 的根目录安装 Skill，并命名为 electron-client-security-audit。
 ```
 
 也可以把本目录放到项目的 `.agents/skills/electron-client-security-audit/`，作为该项目的仓库级 Skill；需要对所有项目生效时，放到 `~/.agents/skills/electron-client-security-audit/`。
