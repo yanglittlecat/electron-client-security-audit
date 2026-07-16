@@ -1,0 +1,7 @@
+interface:
+  display_name: "Electron Client Security Audit"
+  short_description: "审计 Electron 客户端可触发漏洞与 XSS-to-RCE 链路"
+  default_prompt: "使用 $electron-client-security-audit 审计这个 Electron 客户端，并输出可复核的证据链和复现步骤。"
+
+policy:
+  allow_implicit_invocation: true
