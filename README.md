@@ -4,31 +4,33 @@
 
 ## 安装
 
-推荐使用 Codex 的 Skill 安装器从本仓库安装：
+在 Codex 中调用 `$skill-installer` 从本 GitHub 仓库安装：
 
 ```text
-$skill-installer https://github.com/yanglittlecat/electron-client-security-audit/tree/main
+$skill-installer 安装 https://github.com/yanglittlecat/electron-client-security-audit/tree/main/.
 ```
 
 也可以把本目录放到项目的 `.agents/skills/electron-client-security-audit/`，作为该项目的仓库级 Skill；需要对所有项目生效时，放到 `~/.agents/skills/electron-client-security-audit/`。
 
 安装后如果 Codex 没有立即显示该 Skill，重启 Codex 或开启新任务。
 
-## 使用
+## 用法
 
-显式调用 Skill：
+安装后，在 Codex 任务中选择 `electron-client-security-audit` Skill，或用 `$electron-client-security-audit` 显式调用：
 
 ```text
 使用 $electron-client-security-audit 审计 /path/to/unpacked-electron-client，重点检查恶意项目输入、deep link/recent project、开发者工具错误面板，以及 preload/IPC 到 RCE 的链路。
 ```
 
-也可以直接用自然语言提出审计请求，例如：
+该 Skill 也支持自然语言触发，例如：
 
 ```text
 请审计这个 Electron 客户端，确认正常用户能否通过恶意项目或 deep link 触发 XSS，并判断是否能进一步调用 preload/IPC 危险能力。
 ```
 
-建议同时提供以下材料中的一种或多种：客户端安装包、解包后的 `app.asar`、源码、构建产物、复现项目或已有运行日志。Skill 会根据材料选择静态扫描、asar 解包、运行时验证和人工数据流分析，并在需要时生成报告模板。
+建议同时提供以下材料中的一种或多种：客户端安装包、解包后的 `app.asar`、源码、构建产物、复现项目或已有运行日志。Skill 会根据材料选择静态扫描、asar 解包、运行时验证和人工数据流分析。
+
+`scripts/` 下的扫描和 asar 解包脚本是 Skill 执行审计时按需使用的内部辅助资源，不是面向用户的启动命令，不需要手动运行。
 
 ## 仓库内容
 
