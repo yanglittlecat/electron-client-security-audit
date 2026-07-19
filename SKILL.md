@@ -1,6 +1,6 @@
 ---
 name: electron-client-security-audit
-description: "授权 Electron/桌面客户端安全审计：重点确认正常用户可触发的 XSS、恶意项目输入面、deep link/recent project 二阶 XSS、preload/IPC 自定义危险能力与 XSS-to-RCE 链路，并输出可向上级汇报的清晰复现步骤。"
+description: "授权 Electron/桌面客户端安全审计：重点确认正常用户可触发的 XSS、恶意项目或文件引发的路径/命令注入、deep link/recent project 二阶链路、自定义协议/OAuth/本地服务风险、preload/IPC 危险能力与 XSS-to-RCE，并输出可复核的证据链和清晰复现步骤。"
 ---
 # Electron/客户端产品安全漏洞审计 Skill
 
@@ -72,14 +72,15 @@ description: "授权 Electron/桌面客户端安全审计：重点确认正常�
 ### 1.6 输出优先级（范围大或时间有限时按此顺序）
 
 1. 窗口/权限地图
-2. 正常用户可触发入口
-3. source → sink → trigger 链路
-4. `nodeIntegration:true` 的 XSS-to-RCE 计算器证明链
-5. preload/contextBridge 暴露的 `net.createConnection` / `net.connect` / `net.Socket` TCP 外连能力（独立高危网络能力，不依赖 nodeIntegration）
-6. `nodeIntegration:false` 且 `contextIsolation:true` 时的 preload/IPC 自定义危险能力（命令执行、文件读写等）
-7. 本地 loopback 网络能力证明链（TCP/HTTP/WebSocket）
-8. 可向上级汇报的确认漏洞复现步骤
-9. 待验证问题、加固建议和残余风险
+2. 正常用户可触发入口（含恶意项目/文件、deep link、`open-url`、`second-instance`等）
+3. 开发者工具、IDE 或会启动外部进程的客户端中，项目路径/文件名到进程启动 API 的命令注入链
+4. source → sink → trigger 链路
+5. `nodeIntegration:true` 的 XSS-to-RCE 计算器证明链
+6. preload/contextBridge 暴露的 `net.createConnection` / `net.connect` / `net.Socket` TCP 外连能力（独立高危网络能力，不依赖 nodeIntegration）
+7. `nodeIntegration:false` 且 `contextIsolation:true` 时的 preload/IPC 自定义危险能力（命令执行、文件读写等）
+8. 本地 loopback 网络能力证明链（TCP/HTTP/WebSocket）
+9. 可向上级汇报的确认漏洞复现步骤
+10. 待验证问题、加固建议和残余风险
 
 ### 1.7 验证项目规则
 
@@ -103,6 +104,8 @@ description: "授权 Electron/桌面客户端安全审计：重点确认正常�
 - 漏洞总览表：编号、标题、严重性、状态、证据强度、影响组件、证据文件/行号、是否具备正常用户复现路径
 - 每个确认漏洞的：原因、影响对象、正常用户利用链、危害证明、清晰复现步骤（直接写在正文中，不得只写"详见 PoC 文件"）、修复建议
 - 对开发者工具/IDE/小程序工具：覆盖恶意项目输入面、编译日志/代码帧、recent project、deep link、Prompt/Modal/Dialog、右键菜单
+- 对会启动外部进程的客户端：覆盖可控路径/文件名、实际 shell 语义、参数边界、平台差异与自然触发动作
+- 对自定义协议或本地服务：覆盖协议解析、OAuth `state`/redirect、token 流转、来源校验、授权、CORS/PNA 与绑定地址
 - 对未确认但可疑的问题标记为"待验证"并说明缺失条件
 - 对未发现可利用链的风险点只给加固建议，不放入确认漏洞总览
 - 区分"确认漏洞""待验证问题""配置加固建议"
@@ -139,6 +142,9 @@ description: "授权 Electron/桌面客户端安全审计：重点确认正常�
 - 仅通过 DevTools/console 调用 `window.xxx`、`ipcRenderer`、`require` 成功
 - 仅通过修改本机数据库、缓存、源码、打包产物触发
 - 仅证明 `shell.openExternal` 打开普通 URL，但未证明可造成正常用户危害
+- 仅发现路径/文件名进入 `exec`/`spawn`/包装器，但未确认 API 的 shell 语义、参数边界、目标平台、攻击者可控字符和自然触发路径
+
+命令注入不依赖 XSS，但确认为高危仍必须证明 `source → transform/quoting → process-launch sink → shell interpretation → natural trigger → benign impact`。
 
 ## 4. 辅助脚本
 
@@ -146,6 +152,9 @@ description: "授权 Electron/桌面客户端安全审计：重点确认正常�
 
 - `scripts/static_scout.py`：递归扫描，列出 XSS source/sink、HTML 属性上下文模板、开发者工具攻击面、deep link/recent project、Electron 配置、preload/IPC、危险能力、asar 文件候选。**脚本只是辅助发现线索，不能替代人工数据流和可达性分析。**
 - `scripts/extract_asar_safe.sh`：安全解包 `.asar` 文件（不执行代码、不联网安装依赖）。
+- `references/command-injection.md`：当目标会启动外部进程、打开终端/文件管理器、执行构建脚本，或扫描命中 `child_process`/`node-pty`/包装器时，**必须完整读取**并按其平台语义审计。
+- `references/deep-link-local-service.md`：当目标注册自定义协议、处理 `open-url`/`second-instance`/OAuth callback，或监听本地 HTTP/WebSocket/TCP 服务时，**必须完整读取**并按其检查清单审计。
+- `references/report_template.md`：生成最终报告时使用的结构模板。
 
 将 `<skill-directory>` 替换为当前 Agent 实际加载本 Skill 的目录：
 
@@ -167,6 +176,7 @@ python3 <skill-directory>/scripts/static_scout.py . \
 3. 发现 `.asar` 时，解包到 `audit-artifacts/asar-unpacked/<asar-name>/` 后审计（不执行解包出的代码）。
 4. 建立窗口/权限地图：主窗口、欢迎页、recent project 页、编译/构建面板、日志面板、预览页、Prompt/Dialog/Modal、设置页、webview、BrowserView、OAuth/远端页、自定义协议落地页。
 5. 对每个窗口记录：创建位置、`loadURL/loadFile`、路由、`webPreferences`（`nodeIntegration`、`contextIsolation`、`sandbox`、`preload`、`enableRemoteModule`、`webviewTag`）、CSP、导航限制。
+6. 全局盘点 `exec/execSync`、`execFile/execFileSync`、`spawn/spawnSync`、`fork`、`node-pty`及业务包装器，记录可执行文件、参数数组、`shell` 选项、`cwd`、平台分支和用户可控来源。命中时读取 `references/command-injection.md`。
 
 > 不要等确认 XSS 后才看 Electron 配置。窗口权限地图是判断漏洞影响的前置证据；但配置问题必须与用户可控触发链结合后才能升级为可汇报漏洞。
 
@@ -185,6 +195,8 @@ python3 <skill-directory>/scripts/static_scout.py . \
 - 编译器、打包器、linter、type checker、source map、构建失败信息
 - recent project、history、cache、localStorage、IndexedDB、SQLite、JSON 配置中的项目记录
 - 导入/打开项目、预览、编译、构建、上传、删除、重命名等 UI 流程
+- 项目目录名、文件名、路径、构建参数、终端命令和外部工具参数
+
 
 **必须审计的 sink / 渲染点：**
 
@@ -195,13 +207,14 @@ python3 <skill-directory>/scripts/static_scout.py . \
 - Markdown/HTML/ANSI 日志渲染、语法高亮、diff viewer、stack trace viewer
 - 任何 HTML 字符串模板：`<input value="${x}">`、`title="${x}"`、`href="${x}"`、`src="${x}"`、`data-*="${x}"` 等属性上下文
 - 任何将项目数据拼接进 HTML 后写入 `innerHTML`、`outerHTML`、`insertAdjacentHTML`、`document.write`、`loadURL(data:text/html,...)`、Prompt 模板或自定义 modal 的逻辑
+- 任何使用 shell 字符串、`shell:true`、终端包装器或攻击者可控可执行文件/参数的进程启动逻辑
+
 
 **必须枚举的自然用户触发动作：**
 
 打开/导入项目 → 编译/预览/构建 → 查看错误日志 → 点击错误项/代码帧/文件路径/高亮片段 → 右键异常项目 → 删除/重命名/从 recent project 移除 → 打开项目详情/设置/上传/预览窗口 → 关闭异常弹窗/聚焦输入框/触发 `autofocus`/`onload`/`onerror` 等事件
 
 如果项目可控内容进入上述 UI，必须做 source → persistence/transform → sink → trigger 的二阶链路分析，不能只检查是否存在直接 `innerHTML`。
-
 ### 5.3 审计 XSS 与 HTML 上下文注入
 
 **常见输入源：**
@@ -268,26 +281,21 @@ python3 <skill-directory>/scripts/static_scout.py . \
 | 加载与导航 | 任意 URL 打开、`loadURL`、`window.open`、webview `src`、外部协议处理 |
 | 认证/敏感数据 | token、cookie、keychain、`safeStorage`、配置、日志、数据库访问 |
 
-> **🔥 `net.createConnection` / `net.connect` / `net.Socket` = 独立高危网络能力**：Node.js 原生 TCP socket 一旦通过 preload/contextBridge 暴露给渲染进程，即使 `nodeIntegration:false`，XSS 也可建立到任意地址的 **raw TCP 双向通道**。该通道完全绕过浏览器同源/CORS 策略。攻击者组合 XSS 本身的 JS 执行能力（`socket.write()` 下发指令 + `socket.on('data')` 接收结果），即可实现交互式远程控制。若同进程还暴露了 IPC 或命令执行，则直接构成完整反向 Shell。**审计时必须将此能力独立标记为高危网络能力，不得仅归类为"网络信息泄露"。**
+> **`net.createConnection` / `net.connect` / `net.Socket` = 独立高危网络能力**：Node.js 原生 TCP socket 一旦通过 preload/contextBridge 暴露给渲染进程，即使 `nodeIntegration:false`，XSS 也可建立到任意地址的 **raw TCP 双向通道**。该通道完全绕过浏览器同源/CORS 策略。攻击者组合 XSS 本身的 JS 执行能力（`socket.write()` 下发指令 + `socket.on('data')` 接收结果），即可实现交互式远程控制。若同进程还暴露了 IPC 或命令执行，则直接构成完整反向 Shell。**审计时必须将此能力独立标记为高危网络能力，不得仅归类为"网络信息泄露"。**
 
 > 特别注意 `shell.openExternal`：如果 URL 部分可控（scheme 固定但 path 可控），需分析在不同平台上的实际风险。检查是否可通过 `file://` 协议打开本地可执行文件或通过自定义协议处理器绕过检查。
 
 ### 5.6 本地服务连接来源校验
 
-客户端可能在本地监听 HTTP/WebSocket/TCP 服务（如 `127.0.0.1:7805`）用于本地 IPC、同步、代理中转等。若未对连接来源做 Origin/Referer 校验，攻击者可通过外部恶意网站、本地 HTML 页面、恶意项目中的 webview 等绕过客户端权限模型直连本地服务。
+客户端在 loopback 上监听 HTTP/WebSocket/TCP 时，不得因为“仅绑定 `127.0.0.1`”就认为安全。分开评估跨站请求能否改变状态、浏览器是否允许读取响应，以及非浏览器客户端是否绕过业务授权。
 
-**可利用入口：** 外部恶意网站通过 WebSocket/fetch 直连本地端口（跨站连接攻击）；本地恶意 HTML（`file://` 打开或嵌入 iframe）；恶意项目通过 webview 或 BrowserWindow 加载的远程页面；浏览器中打开的恶意网页（若服务绑定 `127.0.0.1` 且浏览器可发起跨域请求）。
+1. 扫描 `server.listen`、`app.listen`、`http.createServer`、`WebSocketServer`、`net.createServer` 和协议处理器中的按需启动逻辑。
+2. 检查每个端点的随机能力 token/session、权限范围、时效、重放防护和参数校验；`Origin`/`Host` 校验是防御的一部分，不能代替授权。
+3. 分析 CORS 的精确条件：响应可读需要浏览器允许的 `Access-Control-Allow-Origin`；带凭据读取还需匹配 origin 与 `Access-Control-Allow-Credentials: true`，`*` 不能与凭据模式混用。
+4. 检查 preflight、Private Network Access、cookie `SameSite`/`Secure`、WebSocket `Origin`、DNS rebinding/`Host` 校验及浏览器版本差异；不能仅凭缺少 `Origin` 校验就断言响应可被读取。
+5. 动态验证时使用本地 benign HTML 与 loopback 服务，分别记录“请求已发出”、“状态已改变”、“响应可读”三类结果。
 
-**危害：** 未授权读取用户认证态数据；劫持代理配置中转流量；窃取本地存储的 token/session/cookie；批量枚举用户数据。
-
-**检测方法：**
-
-1. 扫描 `server.listen`、`new WebSocketServer`、`http.createServer`、`express()`、`net.createServer` 等本地监听
-2. 检查是否验证 `Origin`/`Referer` 头
-3. 检查 CORS 配置（`Access-Control-Allow-Origin: *`）或完全无校验
-4. 检查绑定地址是 `127.0.0.1` 还是 `0.0.0.0`
-5. 检查是否要求自定义认证 token 或 session 校验
-6. 动态验证：启动客户端后，通过独立浏览器/进程检测是否能直连本地端口获取业务数据
+命中本地服务或自定义协议时，必须读取 `references/deep-link-local-service.md`。
 
 ### 5.7 其他检查项
 
@@ -296,6 +304,7 @@ python3 <skill-directory>/scripts/static_scout.py . \
 - **自动更新**：检查更新机制是否使用 HTTPS、是否验证更新包签名、更新 URL 是否可控
 
 ## 6. XSS-to-RCE 与自定义能力链路分析
+
 
 ### 6.1 情况 A：`nodeIntegration:true`
 
@@ -457,6 +466,14 @@ python3 <skill-directory>/scripts/static_scout.py . \
 - 右键、删除、重命名、打开详情等自然操作是否触发
 - 触发窗口是否是高权限 Electron renderer，或是否可调用 preload/IPC 危险能力
 
+### 场景 C：项目路径/文件名命令注入
+
+- 项目路径、文件名、构建参数或用户输入是否进入进程启动 API
+- 实际调用是否经过 shell；`spawn`/`execFile`/`fork` 不得按 `exec` 的语义类推
+- 可执行文件、参数边界、`shell` 选项、平台分支和包装器是否已人工确认
+- 是否可通过导入、编译、预览、打开终端/文件管理器等自然动作触发
+- 使用 `references/command-injection.md` 的平台矩阵和 benign 验证规则得出结论
+
 ## 9. 修复建议基线
 
 - 禁用 `nodeIntegration`；启用 `contextIsolation`；启用 `sandbox`；禁用 `enableRemoteModule` / `@electron/remote`
@@ -470,4 +487,6 @@ python3 <skill-directory>/scripts/static_scout.py . \
 - 强化 CSP，移除 `unsafe-inline`、`unsafe-eval`，限制 `script-src`、`connect-src`、`frame-src`
 - 对文件读写使用固定目录、路径规范化、扩展名/大小/内容校验
 - 对 recent project、history、cache、数据库中的用户可控字段做统一编码和上下文转义
+- 启动外部进程时优先使用无 shell 的固定可执行文件与参数数组；禁止将项目路径/文件名拼入 shell 字符串
+- 本地服务使用随机能力 token、最小权限、短时效和重放防护，并对 HTTP `Origin`/`Host`、WebSocket `Origin`、CORS/PNA 做精确配置
 - 报告中不得原样展示密钥、token、cookie、私钥、会话凭据、个人隐私路径或其他敏感值
