@@ -3,15 +3,17 @@
 > 项目/目录：`<当前工作目录>`  
 > 审计时间：`<YYYY-MM-DD>`  
 > 审计人员/工具：支持 Agent Skills 的客户端 + electron-client-security-audit Skill
-> 审计类型：授权静态安全审计，重点覆盖 XSS、Electron 配置、开发者工具恶意项目输入面、deep link/recent project 二阶链路、preload/contextBridge/IPC、自定义函数与 XSS-to-RCE 链路。
+> 审计类型：授权客户端安全审计，重点覆盖 XSS、恶意项目/文件到进程启动的命令注入、deep link/recent project、自定义协议/OAuth/本地服务、Electron 配置、preload/contextBridge/IPC 与 XSS-to-RCE。
 
 ## 1. 结论摘要
 
 - 总体风险等级：`高/中/低/未发现确认漏洞`
 - 确认漏洞数量：`<n>`
 - 待验证风险点数量：`<n>`
-- 最高影响：`XSS / XSS-to-RCE / 任意文件读写 / 任意外连 / 敏感信息读取 / 其他`
+- 最高影响：`XSS / XSS-to-RCE / 命令注入 / 任意文件读写 / 本地服务未授权操作 / 任意外连 / 敏感信息读取 / 其他`
 - 是否发现开发者工具恶意项目链路：`是/否/不适用`
+- 是否发现路径/文件名到进程启动链路：`是/否/不适用`
+- 是否发现自定义协议/OAuth/本地服务链路：`是/否/不适用`
 - 是否生成验证项目：`是/否`
 - 验证项目目录：`<../audit-poc-... 或 不适用>`
 
@@ -24,6 +26,8 @@
 - 已解包 asar：`<paths>`
 - 已审计模块：`<list>`
 - 开发者工具专项入口：`<打开项目/deep link/recent project/编译面板/日志面板/Prompt/右键菜单/其他>`
+- 进程启动审计：`<exec/spawn/execFile/fork/node-pty/包装器/不适用>`
+- 协议与本地服务：`<scheme/open-url/second-instance/OAuth/HTTP/WebSocket/TCP/不适用>`
 
 ### 2.2 限制说明
 
@@ -37,7 +41,7 @@
 
 ### 3.1 严重性
 
-- 高危：默认或低交互可触发 XSS，且所在 Electron 上下文可扩大为 RCE、任意文件读写、敏感凭据读取、任意外连能力；或无需 XSS 即可通过 IPC/协议/恶意项目触发高危能力。
+- 高危：正常用户可触发 RCE/命令注入、任意文件读写、敏感凭据读取或权限绕过；或 XSS 可调用 Electron/preload/IPC/Node 高危能力；或本地服务未授权操作具有同等影响。
 - 中危：默认可触发 XSS，但未发现 Node/preload/IPC 扩权链路；或危险能力需要额外权限、特殊配置、复杂交互。
 - 低危：安全配置不佳、理论风险、仅开发模式可触发、或暂无明确用户可控输入。
 - 待验证：存在 source/sink/能力线索，但缺少触发条件、调用链、默认配置或环境证据。
@@ -72,6 +76,7 @@
 | projectUri/deep link | `<是/否/不确定>` | `<recent/cache/无>` | `<欢迎页/异常项目/Prompt>` | `<点击链接/右键删除>` | `<高/低/未知>` | `<说明>` |
 | 编译错误/代码帧/日志 | `<是/否/不确定>` | `<build output/source map>` | `<编译面板/日志面板>` | `<编译/点击错误项>` | `<高/低/未知>` | `<说明>` |
 | Prompt/Input/Modal/Dialog | `<是/否/不确定>` | `<模板变量>` | `<HTML 属性/HTML 文本>` | `<打开/聚焦/onload>` | `<高/低/未知>` | `<说明>` |
+| 项目路径/文件名到进程启动 | `<是/否/不确定>` | `<resolve/IPC/引号>` | `<exec/spawn/包装器>` | `<导入/编译/打开目录>` | `<shell/无 shell/未知>` | `<说明>` |
 
 ## 7. 详细发现
 
@@ -93,8 +98,9 @@
 - Source：`<输入源，例如 projectUri/deep link/项目源码/文件名/编译错误/API 响应>`
 - Persistence/Transform：`<recent project/basename/cache/source map/日志格式化/模板变量>`
 - Sanitizer/Encoder：`<处理逻辑，是否按上下文转义>`
-- Sink：`<危险 sink，例如 innerHTML、Prompt 属性模板、v-html、loadURL data:text/html>`
+- Sink：`<危险 sink，例如 innerHTML、Prompt 属性模板、exec shell 字符串、本地高权限 API>`
 - Context：`<HTML 文本/HTML 属性/URL/CSS/JS/Markdown/日志 HTML>`
+- Execution/Network semantics：`<实际 shell/参数边界/无 shell；或请求可发出/状态可改变/响应可读>`
 - Trigger：`<触发条件，例如打开项目、编译、点击错误项、右键异常项目、删除、重命名>`
 - Privilege：`<nodeIntegration/contextIsolation/sandbox/preload/IPC 能力>`
 - 默认可触发：`是/否/不确定`
@@ -107,7 +113,7 @@
 
 1. `<步骤 1：输入进入 source>`
 2. `<步骤 2：被持久化或转换，例如 recent project/basename/编译错误>`
-3. `<步骤 3：到达 XSS sink>`
+3. `<步骤 3：到达 HTML/进程启动/协议/本地服务等危险 sink>`
 4. `<步骤 4：通过自然动作触发>`
 5. `<步骤 5：结合 Electron 配置或 preload/custom API 扩大影响>`
 
@@ -117,6 +123,7 @@
 
 - XSS 验证：`<alert/DOM 标记/console log>`
 - RCE 验证：`<仅计算器或等价 benign 命令，需授权隔离环境>`
+- 命令注入验证：`<记录平台、实际 shell、自然触发与计算器现象>`
 - 网络能力验证：`<仅本地 loopback，例如本地测试服务；不使用外部地址>`
 - 验证项目文件：`<README/最小项目文件/触发文件>`
 - 预期现象：`<可观测结果>`
@@ -130,6 +137,8 @@
 - `<preload/IPC 最小权限与参数校验>`
 - `<CSP/导航/外部协议限制>`
 - `<recent project/deep link/日志/代码帧专项修复>`
+- `<取消 shell 字符串，使用固定可执行文件与参数数组>`
+- `<协议/OAuth/本地服务的授权、Origin/Host、CORS/PNA 与重放防护>`
 
 ## 8. Electron 安全配置检查
 
@@ -152,26 +161,44 @@
 |---|---|---|---|---|---|---|---|
 | `<api>` | `<preload file>` | `<ipcMain handler>` | `<fs/net/exec/etc>` | 是/否/不确定 | 是/否/不确定 | `<风险>` | `<建议>` |
 
-## 10. Deep link / 协议 / recent project 检查
+## 10. Deep link / 自定义协议 / OAuth / recent project 检查
 
 | 入口 | 处理位置 | 参数 | 是否持久化 | 展示位置 | 上下文 | 触发动作 | 结论 |
 |---|---|---|---|---|---|---|---|
 | `<protocol/projectUri>` | `<file:line>` | `<参数>` | `<recent/cache>` | `<欢迎页/Prompt>` | `<属性/HTML/文本>` | `<右键/删除>` | `<说明>` |
 
-## 11. 编译错误 / 日志 / 代码帧检查
+### 10.1 OAuth 与协议参数
+
+| 入口 | 平台/冷热启动 | URL 白名单 | state/PKCE/nonce | 凭据流转 | 业务 sink | 结论 |
+|---|---|---|---|---|---|---|
+| `<scheme/open-url/argv>` | `<macOS/Windows/Linux>` | `<scheme/host/path>` | `<有/无/不适用>` | `<code/token/session>` | `<导航/持久化/API>` | `<说明>` |
+
+### 10.2 本地服务端点
+
+| 监听位置 | 绑定/端口 | method/path | 授权/重放 | Origin/Host | CORS/PNA | 请求发出 | 状态改变 | 响应可读 | 结论 |
+|---|---|---|---|---|---|---|---|---|---|
+| `<file:line>` | `<127.0.0.1:port>` | `<GET /api>` | `<token/session>` | `<策略>` | `<策略>` | `<是/否>` | `<是/否>` | `<是/否>` | `<说明>` |
+
+## 11. 路径 / 文件名 / 进程启动检查
+
+| Source | Transform | API/包装器 | 可执行文件 | 参数边界 | shell/平台 | 自然触发 | 现象 | 结论 |
+|---|---|---|---|---|---|---|---|---|
+| `<projectPath/fileName>` | `<resolve/quote/IPC>` | `<exec/spawn/...>` | `<fixed/controllable>` | `<array/string>` | `<cmd/sh/none>` | `<导入/编译/打开目录>` | `<计算器/无>` | `<说明>` |
+
+## 12. 编译错误 / 日志 / 代码帧检查
 
 | 输入 | 处理位置 | 渲染位置 | 渲染方式 | 是否转义 | 触发动作 | 窗口权限 | 结论 |
 |---|---|---|---|---|---|---|---|
 | `<源码片段/文件名/error.message>` | `<file:line>` | `<编译面板>` | `<innerHTML/模板>` | `<是/否/不确定>` | `<编译/点击错误项>` | `<高/低/未知>` | `<说明>` |
 
-## 12. 残余风险与后续建议
+## 13. 残余风险与后续建议
 
 - `<需动态测试的路由/功能>`
 - `<需补充的构建产物/asar/源码>`
 - `<建议加入 CI 安全检查项>`
 - `<建议补充的验证项目或回归用例>`
 
-## 13. 附录：关键证据摘录
+## 14. 附录：关键证据摘录
 
 ```text
 <必要的最短代码片段，避免泄露敏感信息>

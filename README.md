@@ -1,6 +1,6 @@
 # Electron Client Security Audit Agent Skill
 
-这是一个基于 [Agent Skills 开放标准](https://agentskills.io) 的 Electron/桌面客户端安全审计 Skill，可供 **Codex** 和 **Claude Code** 使用。它重点追踪正常用户路径可触发的 XSS、deep link/recent project 二阶 XSS、preload/IPC 危险能力和 XSS-to-RCE 链路，并输出可复核的证据链和复现步骤。
+这是一个基于 [Agent Skills 开放标准](https://agentskills.io) 的 Electron/桌面客户端安全审计 Skill，可供 **Codex** 和 **Claude Code** 使用。它重点追踪正常用户路径可触发的 XSS、恶意项目/文件到进程启动的命令注入、deep link/recent project 二阶链路、自定义协议/OAuth/本地服务、preload/IPC 危险能力和 XSS-to-RCE，并输出可复核的证据链和复现步骤。
 
 ## 安装
 
@@ -24,20 +24,20 @@
 - 个人级：`~/.claude/skills/electron-client-security-audit/`
 - 项目级：`<project>/.claude/skills/electron-client-security-audit/`
 
-目录中必须保留 `SKILL.md`、`scripts/` 和 `references/` 的相对位置。如果安装前顶层 skills 目录尚不存在，安装后重启对应客户端或开启新会话。
+目录中必须保留 `SKILL.md`、`scripts/`、`references/` 和 Codex 使用的 `agents/` 的相对位置。如果安装前顶层 skills 目录尚不存在，安装后重启对应客户端或开启新会话。
 
 ## 调用
 
 ### Codex
 
 ```text
-使用 $electron-client-security-audit 审计 /path/to/unpacked-electron-client，重点检查恶意项目输入、deep link/recent project、开发者工具错误面板，以及 preload/IPC 到 RCE 的链路。
+使用 $electron-client-security-audit 审计 /path/to/unpacked-electron-client，重点检查恶意项目输入、项目路径到进程启动的命令注入、deep link/recent project、自定义协议/OAuth/本地服务，以及 preload/IPC 到 RCE 的链路。
 ```
 
 ### Claude Code
 
 ```text
-/electron-client-security-audit 审计 /path/to/unpacked-electron-client，重点检查恶意项目输入、deep link/recent project、开发者工具错误面板，以及 preload/IPC 到 RCE 的链路。
+/electron-client-security-audit 审计 /path/to/unpacked-electron-client，重点检查恶意项目/文件、路径命令注入、deep link/recent project、自定义协议/OAuth/本地服务和 preload/IPC 到 RCE 的链路。
 ```
 
 两者都可以根据 `SKILL.md` 的 `description` 自动触发。也可直接使用自然语言：
