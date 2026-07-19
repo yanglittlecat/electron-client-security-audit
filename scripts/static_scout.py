@@ -6,9 +6,11 @@ This helper performs read-only recursive scanning and writes a Markdown summary.
 It does not execute project code, does not install dependencies, and does not
 contact the network. Treat results as leads; confirm reachability manually.
 
-v2 focus:
+v3 focus:
 - developer-tool / IDE malicious-project attack surface
+- project-path / process-launch command injection
 - deep link -> recent project -> second-order XSS chains
+- custom protocol / OAuth / loopback-service authorization
 - compile error / code frame / log panel rendering
 - HTML attribute-context injection in Prompt/Modal/Input templates
 - Electron window permission hints and preload/IPC capabilities
@@ -135,6 +137,28 @@ PATTERNS: Dict[str, List[PatternDef]] = {
         ("basename derived display", cre(r"path\.basename\s*\(|basename\s*\(|projectName\s*=")),
         ("url/file path decode", cre(r"decodeURIComponent|new\s+URL\s*\(|fileURLToPath|pathToFileURL")),
     ],
+    "process_launch": [
+        ("child_process import", cre(r"(?:node:)?child_process|require\s*\(\s*['\"](?:node:)?child_process['\"]")),
+        ("exec shell string", cre(r"(?:\.|\b)(?:exec|execSync)\s*\(")),
+        ("execFile launch", cre(r"(?:\.|\b)(?:execFile|execFileSync)\s*\(")),
+        ("spawn launch", cre(r"(?:\.|\b)(?:spawn|spawnSync)\s*\(")),
+        ("fork module launch", cre(r"(?:\.|\b)fork\s*\(")),
+        ("shell true", cre(r"\bshell\s*:\s*true\b")),
+        ("shell option", cre(r"\bshell\s*:\s*[^,}\n]+")),
+        ("node-pty shell", cre(r"node-pty|pty\.spawn\s*\(")),
+        ("process wrapper", cre(r"\b(?:execa|execaCommand|crossSpawn|shelljs|zx)\b")),
+        ("open terminal/file manager", cre(r"showItemInFolder|openPath|openExternal|xdg-open|explorer(?:\.exe)?|cmd(?:\.exe)?|powershell(?:\.exe)?|open\s+['\"]")),
+        ("cwd option", cre(r"\bcwd\s*:\s*")),
+    ],
+    "protocol_oauth": [
+        ("protocol registration", cre(r"setAsDefaultProtocolClient|protocols?\s*:\s*\[")),
+        ("open-url handler", cre(r"app\.on\s*\(\s*['\"]open-url['\"]")),
+        ("second-instance handler", cre(r"app\.on\s*\(\s*['\"]second-instance['\"]")),
+        ("OAuth redirect parameter", cre(r"redirect_uri|redirectUri|callbackUrl|returnUrl")),
+        ("OAuth state/PKCE/nonce", cre(r"code_verifier|code_challenge|\bpkce\b|\bnonce\b|[?&]state=|\bstate\s*[:=]")),
+        ("OAuth token vocabulary", cre(r"access_token|refresh_token|authorization_code|token_endpoint")),
+        ("custom protocol handler", cre(r"protocol\.(?:handle|registerFileProtocol|registerStringProtocol|intercept\w*Protocol)")),
+    ],
     "electron_window_config": [
         ("BrowserWindow", cre(r"\bnew\s+BrowserWindow\s*\(")),
         ("BrowserView", cre(r"\bnew\s+BrowserView\s*\(")),
@@ -171,7 +195,7 @@ PATTERNS: Dict[str, List[PatternDef]] = {
         ("any channel passthrough hint", cre(r"channel\s*[,)]|ipcRenderer\.(?:send|invoke)\s*\(\s*channel|ipcMain\.(?:on|handle)\s*\(\s*channel")),
     ],
     "dangerous_capabilities": [
-        ("child_process import/use", cre(r"child_process|\b(?:exec|execFile|spawn)\s*\(")),
+        ("child_process import/use", cre(r"child_process|\b(?:exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(")),
         ("node-pty", cre(r"node-pty|pty\.spawn")),
         ("fs direct read/write", cre(r"\bfs\.(?:readFile|readFileSync|writeFile|writeFileSync|appendFile|unlink|rm|rename|copyFile|mkdir|readdir|stat)\s*\(")),
         ("fs.promises read/write", cre(r"\bfs\.promises\.(?:readFile|writeFile|appendFile|unlink|rm|rename|copyFile|mkdir|readdir|stat)\s*\(")),
@@ -188,12 +212,22 @@ PATTERNS: Dict[str, List[PatternDef]] = {
         ("autoUpdater", cre(r"autoUpdater|electron-updater")),
     ],
     "local_service": [
-        ("local HTTP server listen", cre(r"\b(?:http\.createServer|express\(\)|server\.listen)\b")),
+        ("local HTTP server listen", cre(r"\b(?:https?\.createServer|express\s*\(|(?:app|server)\.listen\s*\()")),
         ("WebSocket server", cre(r"\b(?:new\s+WebSocketServer|ws\.Server|WebSocket\.Server)\b")),
         ("TCP server", cre(r"\b(?:net\.createServer|dgram\.createSocket)\b")),
         ("127.0.0.1/localhost binding", cre(r"['\"]127\.0\.0\.1['\"]|['\"]localhost['\"]")),
-        ("Origin/Referer validation", cre(r"\b(?:Origin|origin|referrer|Referer)\s*(?:===?|!==?)")),
-        ("CORS wildcard", cre(r"Access-Control-Allow-Origin\s*:\s*\*|allowOrigin\s*:\s*['\"]\*['\"]")),
+        ("Origin/Host validation", cre(
+            r"(?:headers?\s*\[?\s*['\"](?:origin|host)['\"]|headers?\.(?:origin|host)|"
+            r"getHeader\s*\(\s*['\"](?:origin|host)['\"]|req\.get\s*\(\s*['\"](?:origin|host)['\"]\))"
+            r"\s*(?:===?|!==?)|(?:allowed|trusted)(?:Origins?|Hosts?)|(?:origin|host)(?:Allowlist|Whitelist)"
+        )),
+        ("CORS wildcard", cre(r"Access-Control-Allow-Origin[^\n]{0,80}\*|allowOrigin\s*:\s*['\"]\*['\"]|origin\s*:\s*['\"]?\*")),
+        ("CORS credentials", cre(r"Access-Control-Allow-Credentials|credentials\s*:\s*true")),
+        ("Private Network Access", cre(r"Access-Control-(?:Request|Allow)-Private-Network|targetAddressSpace")),
+        ("WebSocket origin handling", cre(
+            r"verifyClient|shouldHandle|(?:WebSocket|upgrade)[^\n]{0,200}(?:origin|host)|"
+            r"(?:origin|host)[^\n]{0,200}(?:WebSocket|upgrade)"
+        )),
         ("config port number", cre(r"['\"]port['\"]\s*:\s*\d{4,5}|PORT|port\s*=\s*\d{4,5}")),
     ],
     "sanitizer_csp": [
@@ -210,6 +244,8 @@ CATEGORY_TITLES = {
     "html_attribute_sinks": "HTML 属性上下文注入线索",
     "devtool_attack_surfaces": "开发者工具 / 恶意项目攻击面线索",
     "second_order_sources": "Deep link / recent project / 二阶链路线索",
+    "process_launch": "进程启动 / 路径命令注入线索",
+    "protocol_oauth": "自定义协议 / OAuth 线索",
     "electron_window_config": "Electron 窗口配置线索",
     "preload_ipc_custom_api": "Preload / IPC / 自定义 API 线索",
    "dangerous_capabilities": "危险能力线索",
@@ -219,6 +255,8 @@ CATEGORY_TITLES = {
 
 CATEGORY_ORDER = [
     "devtool_attack_surfaces",
+    "process_launch",
+    "protocol_oauth",
    "second_order_sources",
    "html_attribute_sinks",
     "local_service",
@@ -483,6 +521,21 @@ def build_hotspots(result: ScanResult) -> List[Hotspot]:
         if "devtool_attack_surfaces" in cats and "second_order_sources" in cats:
             score += 4
             reasons.append("开发者工具输入面 + 二阶持久化链路")
+        if "devtool_attack_surfaces" in cats and "process_launch" in cats:
+            score += 7
+            reasons.append("恶意项目/路径输入面 + 进程启动线索")
+        if "process_launch" in cats and "shell true" in names:
+            score += 5
+            reasons.append("进程启动显式启用 shell")
+        if "process_launch" in cats and "exec shell string" in names:
+            score += 4
+            reasons.append("exec/execSync shell 字符串线索")
+        if "protocol_oauth" in cats and "local_service" in cats:
+            score += 6
+            reasons.append("自定义协议/OAuth + 本地服务链路")
+        if "protocol_oauth" in cats and "second_order_sources" in cats:
+            score += 3
+            reasons.append("协议入口 + recent project/持久化线索")
         if "html_sinks" in cats and "xss_sources" in cats:
             score += 4
             reasons.append("XSS source + HTML sink 同文件")
@@ -500,9 +553,9 @@ def build_hotspots(result: ScanResult) -> List[Hotspot]:
             if has_local_listener:
                 score += 3
                 reasons.append("本地服务监听线索")
-                if "Origin/Referer validation" not in names:
-                    score += 3
-                    reasons.append("未发现来源校验线索，需人工确认")
+                if "Origin/Host validation" not in names:
+                    score += 2
+                    reasons.append("未发现 Origin/Host 校验线索，需人工确认授权与 CORS/PNA")
             if "CORS wildcard" in names:
                 score += 4
                 reasons.append("本地服务存在宽松 CORS 配置")
@@ -529,7 +582,7 @@ def write_markdown(result: ScanResult, out: Path) -> None:
     hotspots = build_hotspots(result)
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines: List[str] = []
-    lines.append("# Static Scout v2 初筛报告\n")
+    lines.append("# Static Scout v3 初筛报告\n")
     lines.append(f"- 扫描时间：{now}")
     lines.append(f"- 根目录：`{result.root}`")
     lines.append(f"- 已扫描文本文件数：{result.scanned_files}")
@@ -595,18 +648,20 @@ def write_markdown(result: ScanResult, out: Path) -> None:
     lines.append("## 下一步人工确认建议\n")
     lines.append("1. 先建立 Electron 窗口地图，标注每个窗口的 `nodeIntegration`、`contextIsolation`、`sandbox`、`preload` 与数据来源。")
     lines.append("2. 对开发者工具/IDE/小程序工具，优先追踪恶意项目目录名、文件名、projectUri、recent project、编译错误、代码帧、日志面板、Prompt/Modal。")
-    lines.append("3. 对属性上下文命中，检查是否可闭合属性、是否触发 autofocus/onload/onerror/contextmenu，以及是否做了属性上下文转义。")
-    lines.append("4. 对 deep link/recent project 命中，做 source → persistence → display → trigger 的二阶链路分析，不要因为首次打开未执行就判定不可利用。")
-    lines.append("5. 对 HTML/日志/代码帧 sink，确认项目源码、错误信息、路径 basename 或配置字段是否能进入 sink。")
-    lines.append("6. 对 preload/IPC 命中，独立建立能力清单，区分可被恶意项目自然流程调用、可被 XSS 调用、仅可信 renderer 可调用。")
-    lines.append("7. 最终生成中文报告 `客户端产品安全漏洞审计报告.md`，区分已确认、待验证和不可达问题；无害验证只使用 alert/DOM 标记/计算器。")
+    lines.append("3. 对进程启动命中，区分 `exec`、`spawn`、`execFile`、`fork` 及包装器的实际 shell 语义，追踪可控路径/文件名到自然触发。")
+    lines.append("4. 对属性上下文命中，检查是否可闭合属性、是否触发 autofocus/onload/onerror/contextmenu，以及是否做了属性上下文转义。")
+    lines.append("5. 对 deep link/recent project 命中，做 source → persistence → display → trigger 的二阶链路分析。")
+    lines.append("6. 对协议/OAuth/本地服务命中，检查 URL 解析、state/PKCE、端点授权、Origin/Host、CORS/PNA，并分开证明请求发送、状态改变与响应读取。")
+    lines.append("7. 对 HTML/日志/代码帧 sink，确认项目源码、错误信息、路径 basename 或配置字段是否能进入 sink。")
+    lines.append("8. 对 preload/IPC 命中，独立建立能力清单，区分恶意项目流程、XSS 和仅可信 renderer 可调用能力。")
+    lines.append("9. 最终生成中文报告 `客户端产品安全漏洞审计报告.md`，区分已确认、待验证和不可达。")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines), encoding="utf-8")
 
 
 def main(argv: List[str]) -> int:
-    parser = argparse.ArgumentParser(description="Read-only Electron/client security scout v2")
+    parser = argparse.ArgumentParser(description="Read-only Electron/client security scout v3")
     parser.add_argument("root", nargs="?", default=".", help="Root directory to scan; default current directory")
     parser.add_argument("--out", default="audit-artifacts/static_scout_report.md", help="Markdown output path")
     parser.add_argument("--max-bytes", type=int, default=8_000_000, help="Skip text files larger than this")
